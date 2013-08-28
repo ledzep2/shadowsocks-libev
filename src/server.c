@@ -135,6 +135,27 @@ struct remote *connect_to_remote(struct addrinfo *res, const char *iface) {
     return remote;
 }
 
+int server_start_connecting(struct server *server, char *host, char *port) {
+    struct addrinfo hints;
+    asyncns_query_t *query;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    query = asyncns_getaddrinfo(server->listen_ctx->asyncns,
+            host, port, &hints);
+
+    if (query == NULL) {
+        ERROR("asyncns_getaddrinfo");
+        return 0;
+    }
+
+    server->stage = 4;
+    server->query = query;
+
+    return 1;
+}
+
 static void server_recv_cb (EV_P_ ev_io *w, int revents) {
     struct server_ctx *server_recv_ctx = (struct server_ctx *)w;
     struct server *server = server_recv_ctx->server;
@@ -281,17 +302,7 @@ static void server_recv_cb (EV_P_ ev_io *w, int revents) {
             LOGD("connect to: %s:%s", host, port);
         }
 
-        struct addrinfo hints;
-        asyncns_query_t *query;
-        memset(&hints, 0, sizeof hints);
-        hints.ai_family = AF_UNSPEC;
-        hints.ai_socktype = SOCK_STREAM;
-
-        query = asyncns_getaddrinfo(server->listen_ctx->asyncns,
-                host, port, &hints);
-
-        if (query == NULL) {
-            ERROR("asyncns_getaddrinfo");
+        if (!server_start_connecting(server, host, port)) {
             close_and_free_server(EV_A_ server);
             return;
         }
@@ -301,9 +312,6 @@ static void server_recv_cb (EV_P_ ev_io *w, int revents) {
             server->buf_len = r - offset;
             server->buf_idx = offset;
         }
-
-        server->stage = 4;
-        server->query = query;
 
         ev_io_stop(EV_A_ &server_recv_ctx->io);
         ev_timer_start(EV_A_ &server->send_ctx->watcher);
@@ -746,7 +754,16 @@ static void accept_cb (EV_P_ ev_io *w, int revents) {
     }
 
     struct server *server = new_server(serverfd, listener);
-    ev_io_start(EV_A_ &server->recv_ctx->io);
+
+    if (listener->target_host) {
+        if (!server_start_connecting(server, listener->target_host, listener->target_port)) {
+            close_and_free_server(EV_A_ server);
+            return;
+        }
+        ev_timer_start(EV_A_ &server->send_ctx->watcher);
+    } else {
+        ev_io_start(EV_A_ &server->recv_ctx->io);
+    }
     ev_timer_start(EV_A_ &server->recv_ctx->watcher);
 }
 
@@ -760,6 +777,8 @@ int main (int argc, char **argv) {
     char *pid_path = NULL;
     char *conf_path = NULL;
     char *iface = NULL;
+    char *target_host = NULL;
+    char *target_port = NULL;
 
     int server_num = 0;
     char *server_host[MAX_REMOTE_NUM];
@@ -823,6 +842,8 @@ int main (int argc, char **argv) {
         if (password == NULL) password = conf->password;
         if (method == NULL) method = conf->method;
         if (timeout == NULL) timeout = conf->timeout;
+        if (target_host == NULL) target_host = conf->target_host;
+        if (target_port == NULL) target_port = conf->target_port;
     }
 
     if (server_num == 0 || server_port == NULL || password == NULL) {
@@ -878,6 +899,8 @@ int main (int argc, char **argv) {
         listen_ctx->fd = listenfd;
         listen_ctx->method = m;
         listen_ctx->iface = iface;
+        listen_ctx->target_host = target_host;
+        listen_ctx->target_port = target_port;
 
         ev_io_init (&listen_ctx->io, accept_cb, listenfd, EV_READ);
         ev_io_start (loop, &listen_ctx->io);

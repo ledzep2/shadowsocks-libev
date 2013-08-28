@@ -37,6 +37,7 @@ static int to_int(const json_value *value) {
 jconf_t *read_jconf(const char* file) {
 
     static jconf_t conf;
+    memset(&conf, 0, sizeof(conf));
 
     char *buf;
     json_value *obj;
@@ -93,6 +94,10 @@ jconf_t *read_jconf(const char* file) {
                 conf.method = to_string(value);
             } else if (strcmp(name, "timeout") == 0) {
                 conf.timeout = to_string(value);
+            } else if (strcmp(name, "target_host") == 0) {
+                conf.target_host = to_string(value);
+            } else if (strcmp(name, "target_port") == 0) {
+                conf.target_port = to_string(value);
             }
         }
     } else {

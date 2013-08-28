@@ -9,6 +9,8 @@ typedef struct {
     int  remote_num;
     char *remote_host[MAX_REMOTE_NUM];
     char *remote_port;
+    char *target_host;
+    char *target_port;
     char *local_port;
     char *password;
     char *method;

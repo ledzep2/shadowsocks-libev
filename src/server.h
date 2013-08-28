@@ -16,6 +16,8 @@ struct listen_ctx {
     char *iface;
     asyncns_t *asyncns;
     struct sockaddr sock;
+    char *target_host;
+    char *target_port;
 };
 
 struct server_ctx {
